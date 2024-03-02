@@ -4,6 +4,15 @@ import { User } from "../models/user.model.js";
 import { uploadOnCloudinary } from "../utils/cloudinary.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 
+const generateAccessAndRefreshToken = async (userId) => {
+  const user = await User.findById(userId);
+  const accessToken = await user.generateAccessToken();
+  const refreshToken = await user.generateRefreshToken();
+  user.refreshToken = refreshToken;
+  user.save({ validateBeforeSave: false });
+  return { accessToken, refreshToken };
+};
+
 const registerUser = asyncHandler(async (req, res) => {
   //Get user details from frontend
   const { fullName, email, username, password } = req.body;
@@ -71,4 +80,61 @@ const registerUser = asyncHandler(async (req, res) => {
     .json(new ApiResponse(201, createdUser, "User Registered Successfully"));
 });
 
-export { registerUser };
+const loginUser = asyncHandler(async (req, res) => {
+  // req body -> data
+  // username or email
+  //find the user
+  //password check
+  //access and referesh token
+  //send cookie
+
+  const { email, username, password } = req.body;
+  console.log(email);
+
+  if (!(username || email)) {
+    throw new ApiError(500, "No username or email provided");
+  }
+
+  const user = await User.findOne({
+    $or: [{ username }, { email }],
+  });
+
+  if (!user) {
+    throw new ApiError(400, "No user found");
+  }
+
+  const isPasswordValid = await user.isPasswordCorrect(password);
+
+  if (!isPasswordValid) {
+    throw new ApiError(400, "Password is not valid");
+  }
+
+  const { accessToken, refreshToken } = generateAccessAndRefreshToken(user._id);
+
+  const loggedInUser = await User.findById(user._id).select(
+    "-password -refreshToken"
+  );
+
+  const options = {
+    httpOnly: true,
+    secure: true,
+  };
+
+  return res
+    .status(200)
+    .cookie("accessToken", accessToken, options)
+    .cookie("refreshToken", refreshToken, options)
+    .json(
+      new ApiResponse(
+        200,
+        {
+          user: loggedInUser,
+          accessToken,
+          refreshToken,
+        },
+        "User logged in successfully"
+      )
+    );
+});
+
+export { registerUser, loginUser };
